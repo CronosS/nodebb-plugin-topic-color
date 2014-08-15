@@ -20,30 +20,30 @@
 
     var request = window.location.origin+'/api/groups';
     $.getJSON(request, function (data) {
-            if (data.groups.length == 0){
-                $('#groups').append('<p class="alert alert-warning">You don\'t have any groups set</p>');
-            } else if (data.groups.length == 1) {
-                $.each(data.groups, function (i, group) {
-                    if (group.name == 'Bucket') {
-                        $('#groups').append('<p class="alert alert-warning">You don\'t have any other groups set</p>');
-                    } else {
-                        $('#groups').append('<input type="checkbox" title="'+group.name+'" id="'+group.name+'" name="allowed" value="'+group.name+'"> <label for="'+group.name+'">'+group.name+'</label>');
-                    }
-                });
-            } else {
-                $.each(data.groups, function (i, group) {
-                    if (group.name != 'Bucket') {
-                        $('#groups').append('<input type="checkbox" title="'+group.name+'" id="'+group.name+'" name="allowed" value="'+group.name+'"> <label for="'+group.name+'">'+group.name+'</label>');
-                    }
-                    var request = window.location.origin+'/api/admin/plugins/topic-color';
-                    $.getJSON(request, function (data) {
-                        groups = JSON.parse(data.allowedGroups);
-                        $.each(groups, function(i, group){
-                            $('#'+group).attr('checked','checked');
-                        });
-                    });
-                });                
-            };
+		if (data.groups.length == 0){
+			$('#groups').append('<p class="alert alert-warning">You don\'t have any groups set</p>');
+		} else if (data.groups.length == 1) {
+			$.each(data.groups, function (i, group) {
+				if (group.name == 'Bucket') {
+					$('#groups').append('<p class="alert alert-warning">You don\'t have any other groups set</p>');
+				} else {
+					$('#groups').append('<input type="checkbox" title="'+group.name+'" id="'+group.name+'" name="allowed" value="'+group.name+'"> <label for="'+group.name+'">'+group.name+'</label>');
+				}
+			});
+		} else {
+			$.each(data.groups, function (i, group) {
+				if (group.name != 'Bucket') {
+					$('#groups').append('<input type="checkbox" title="'+group.name+'" id="'+group.name+'" name="allowed" value="'+group.name+'"> <label for="'+group.name+'">'+group.name+'</label>');
+				}
+			});                
+		}
+		var request = window.location.origin+'/api/admin/plugins/topic-color';
+		$.getJSON(request, function (data) {
+			groups = JSON.parse(data.allowedGroups);
+			$.each(groups, function(i, group){
+				$('#'+group).attr('checked','checked');
+			});
+		});
     });
 
     $('#save').click( function (event) {

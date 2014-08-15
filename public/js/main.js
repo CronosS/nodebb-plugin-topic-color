@@ -1,277 +1,129 @@
-(function() {
-	"use strict";
+(function () {
+    'use strict';
+	/*global socket, RELATIVE_PATH, ajaxify, utils*/
+    //TODO: known issue: /home preview post of a non-valid-user on a valid-topic
 
-	$('document').ready(function() {
+    var allowedGroups = getAllowedGroups(),
+        allGroups = getAllGroups(),
+        regColor = /%\((#(?:[A-Fa-f0-9]{3}(?:[A-Fa-f0-9]{3})?)|(?:rgb\(\d{1,3},\d{1,3},\d{1,3}\))|(?:[a-z]){3,})\)\[(.+?)\]/g;
 
-		var allowedGroups = ['Bucket'];
+    //--- Event handlers ---
+    $(document).ready(watchNotifications);
+    $(window).on('action:ajaxify.end', fetchTopics);
+    $(window).on('action:widgets.loaded', fetchWidgets);
+    socket.on('event:post_edited', watchEditedTopics);
 
-		var request = window.location.origin+'/api/plugins/topic-color';
-		$.getJSON(request, function (data) {
-                        allowedGroups = JSON.parse(data.allowedGroups);
-                    });
+    function watchNotifications() {
+        var notifications = document.querySelector('.notifications');
 
-		$(window).on('action:ajaxify.end', function(ev, data) {
+        if (notifications) {
+            notifications.addEventListener('click', fetchNotifications, false);
+        }
+    }
 
-			if (data.url.match(/^category/) || data.url.match(/^unread/) || data.url.match(/^recent/) || data.url.match(/^popular/) || data.url.match(/^user\/([a-z0-9])+\/topics/)) {
+    function fetchTopics() {
+        //Change Breadcrumb
+        parseColor(document.querySelector('ol.breadcrumb li.active span'), false);
+        //Change document title
+        parseColor(document.querySelector('title'), false);
 
-				var index = [];
-				var count = 0;
+        //Change header information
+        //TODO: fix this.
+        // parseColor(document.querySelector('.header-topic-title.hidden-xs span'), false);
+        document.querySelector('.header-topic-title.hidden-xs').innerHTML = '';
 
-				/* Who posted the topic */
-				var request = window.location.origin+'/api/'+data.url;
-				$.getJSON(request, function (data) {
-					var topics = data.topics;
-					$.each(topics, function(el, topic){
+        $.getJSON(RELATIVE_PATH + '/api/' + ajaxify.currentPage, traverse);
+    }
 
-						var uid = topic.uid,
-						inGroups = [];
+    function watchEditedTopics() {
+        setTimeout(fetchTopics, 270);
+    }
 
-						/* In which groups is the user */
-						var request = window.location.origin+'/api/groups';
-						$.getJSON(request, function (data) {
+    //--- Helper functions ---
+    function getAllowedGroups() {
+        $.getJSON(RELATIVE_PATH + '/api/plugins/topic-color', function (data) {
+            allowedGroups = JSON.parse(data.allowedGroups);
+        });
+    }
 
-							$.each(data.groups, function (i, group){
-								$.each(group.members, function (i, member) {
-									if (member.uid == uid) {
-										inGroups.push(group.name);
-									}
-								});
-							});
+    function getAllGroups() {
+        $.getJSON(RELATIVE_PATH + '/api/groups/', function (groupsData) {
+            allGroups = groupsData.groups;
+        });
+    }
 
-							count++;
-							var match = $.grep(inGroups, function(element) {
-							    	return $.inArray(element, allowedGroups) !== -1;
-							});
-							if (match.length > 0) {
-								index.push(el);
-							}
-							if (count == topics.length) {
-								colorifyTopics(index);
-							}
-						});
-					});						
-				});
-			} else if (data.url.match('')) {
+    function traverse(o) {
+        var i;
 
-				var index = [];
-				var count = 0;
+        if (o && o.hasOwnProperty('tid')) {
+            return filterTopic(o);
+        }
 
-				/* Who posted the topic */
-				var request = window.location.origin+'/api/';
-				$.getJSON(request, function (data) {
-					
-					$.each(data.categories, function (i, category){
-						var posts = category.posts;
-						$.each(category.posts, function (el, post) {
+        for (i in o) {
+            if (typeof (o[i]) === "object") {
+                traverse(o[i]);
+            }
+        }
+    }
 
-							var uid = post.uid,
-							inGroups = [];
+    //--- Main colorify ---
+    function filterTopic(topic) {
+        allGroups.some(function (group) {
+            var isInGroup = group.members.some(function (member) {
+                    //The username comparison (when no userid <directly> accessible) can gives
+                    //unexpected result if 2 members have the same username (not possible yet).
+                    return topic.uid === member.uid || topic.uname === member.username;
+                }),
+                canColor = isInGroup && allowedGroups.indexOf(group.name) !== -1;
 
-							/* In which groups is the user */
-							var request = window.location.origin+'/api/groups';
-							$.getJSON(request, function (data) {
+            return colorifyTopic(topic, canColor) && canColor;
+        });
+    }
 
-								$.each(data.groups, function (i, group){
-									$.each(group.members, function (i, member) {
-										if (member.uid == uid) {
-											inGroups.push(group.name);
-										}
-									});
-								});
+    function colorifyTopic(topic, canColor) {
+        //change topic title on home
+        parseColor(document.querySelector('.post-preview a[href^="/topic/' + topic.tid + '/"]'), canColor);
+        //change topic title on widget last topic
+        parseColor(document.querySelector('#recent_topics li a[href^="/topic/' + topic.tid + '/"]'), canColor);
+        //Change topic title on topic list
+        parseColor(document.querySelector('.category-item[data-tid="' + topic.tid + '"] .topic-title'), canColor);
+        //Change topic title on topic
+        parseColor(document.querySelector('#topic_title_' + topic.mainPid), canColor);
+    }
 
-								count++;
-								var match = $.grep(inGroups, function(element) {
-								    	return $.inArray(element, allowedGroups) !== -1;
-								});
-								if (match.length > 0) {
-									index.push(el);
-								}
-								if (count == posts.length) {
-									colorifyTopics(index);
-								}
-							});
-						});
-					});
-					
-				});
-			}
-		});
+    function parseColor(title, canColor) {
+        if (title !== null) {
+            if (title.textContent.match(regColor)) {
+                title.innerHTML = title.innerHTML.replace(regColor, canColor ? '<font style="color:$1">$2</font>' : '$2');
 
-		$(window).on('action:topic.loaded', function (data) {
-			var request = window.location.origin+'/api'+window.location.pathname;
-			$.getJSON(request, function (topic) {
+                if (title.href !== undefined) {
+                    title.href = title.href.replace(/(\/topic\/\d*\/).*/, '$1' + utils.slugify(title.textContent.replace(regColor, '$2')));
+                }
+            }
+        }
+    }
 
-				var uid = topic.uid,
-				inGroups = [];
+    function fetchNotifications() {
+        //Delay may vary and exceeds 20ms. We check repeatidly until notifications are loaded.
+        var intervalId = setInterval(function () {
+            if (!document.querySelector('#notif-list .fa-spin')) {
+                clearInterval(intervalId);
+                $('#notif-list .text').each(function () {
+                    parseColor(this, false);
+                });
+            }
+        }, 20);
+    }
 
-				/* In which groups is the user */
-				var request = window.location.origin+'/api/groups';
-				$.getJSON(request, function (data) {
+    function fetchWidgets() {
+        setTimeout(function () {
+            $('#recent_topics li').each(function () {
+                var topic = {};
+                topic.uname = this.querySelector('img').dataset.originalTitle;
+                topic.tid = this.querySelector('p a').pathname.substring(7, this.querySelector('p a').pathname.indexOf('/', 7));
 
-					$.each(data.groups, function (i, group){
-						$.each(group.members, function (i, member) {
-							if (member.uid == uid) {
-								inGroups.push(group.name);
-							}
-						});
-					});
-
-					var match = $.grep(inGroups, function(element) {
-					    	return $.inArray(element, allowedGroups) !== -1;
-					});
-
-					if (match.length > 0) {
-						colorifyTopics('allow');
-						$(window).on('scroll',function(){colorifyTopics('allow')});
-					} else {
-						colorifyTopics('deny');
-						$(window).on('scroll',function(){colorifyTopics('deny')});
-					}
-				});
-			});
-		});
-
-		socket.on('event:post_edited', function() {
-			var request = window.location.origin+'/api'+window.location.pathname;
-			$.getJSON(request, function (topic) {
-
-				var uid = topic.uid,
-				inGroups = [];
-
-				/* In which groups is the user */
-				var request = window.location.origin+'/api/groups';
-				$.getJSON(request, function (data) {
-
-					$.each(data.groups, function (i, group){
-						$.each(group.members, function (i, member) {
-							if (member.uid == uid) {
-								inGroups.push(group.name);
-							}
-						});
-					});
-
-					var match = $.grep(inGroups, function(element) {
-					    	return $.inArray(element, allowedGroups) !== -1;
-					});
-					if (match.length > 0) {
-						setTimeout(function(){colorifyTopics('allow')},270);
-					} else {
-						setTimeout(function(){colorifyTopics('deny')},270);
-					}
-				});
-			});
-		});
-
-		//Notifications dropdown menu
-		$('.notifications').on('click',function () {
-			setTimeout(function () {
-				$('#notif-list .text').each(function(){
-					var title = $(this);
-					var reg = /%\((#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})|(rgb\((\d{1,3}),(\d{1,3}),(\d{1,3})\))|([a-z]){3,})\)(\[([^%\(]*)\])/g;
-					if (title.html().match(reg)) {
-						title.html( title.html().replace(reg,'$9') );
-					}
-				});
-			},20)
-		});
-		//Widgets
-		$(window).on('action:widgets.loaded', function () {
-			setTimeout(function () {
-				$('#recent_topics li a').each(function(){
-					var title = $(this);
-					var reg = /%\((#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})|(rgb\((\d{1,3}),(\d{1,3}),(\d{1,3})\))|([a-z]){3,})\)(\[([^%\(]*)\])/g;
-					if (title.html().match(reg)) {
-						var url = title.html().replace(reg,'$9').toLowerCase();
-						title.html( title.html().replace(reg,'$9') );
-						reg = /[^a-z0-9]+/g;
-						url = url.trim().replace(reg,'-');
-						reg = /(\/topic\/\d*\/)(.*)/;
-						if (title.attr('href') != undefined) {
-							title.attr( 'href', title.attr('href').replace(reg,'$1'+url) );
-						} else {
-							title.parent('a').attr( 'href', title.parent('a').attr('href').replace(reg,'$1'+url) );
-						}
-					}
-				});
-			},200);
-		});
-		//Notifications
-		$('.notifications-list a[href*="/topic/"]').each(function () {
-			var title = $(this);
-			var reg = /%\((#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})|(rgb\((\d{1,3}),(\d{1,3}),(\d{1,3})\))|([a-z]){3,})\)(\[([^%\(]*)\])/g;
-			if (title.html().match(reg)) {
-				var url = title.html().replace(reg,'$9').toLowerCase();
-				title.html( title.html().replace(reg,'$9') );
-				reg = /[^a-z0-9]+/g;
-				url = url.trim().replace(reg,'-');
-				reg = /(\/topic\/\d*\/)(.*)/;
-				if (title.attr('href') != undefined) {
-					title.attr( 'href', title.attr('href').replace(reg,'$1'+url) );
-				} else {
-					title.parent('a').attr( 'href', title.parent('a').attr('href').replace(reg,'$1'+url) );
-				}
-			}
-		});
-	});
-
-	function colorifyTopics(allowed) {
-		//Change topic title on home & topic list
-		$('.post-preview a[href*="/topic/"], .category-item .topic-title').each(function (index) {
-			var title = $(this);
-			var reg = /%\((#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})|(rgb\((\d{1,3}),(\d{1,3}),(\d{1,3})\))|([a-z]){3,})\)(\[([^%\(]*)\])/g;
-			if ($.inArray(index, allowed) !== -1) {
-				if (title.html().match(reg)) {
-					var url = title.html().toLowerCase().replace(reg,'$9');
-					title.html( title.html().replace(reg,'<font style="color:$1">$9</font>') );
-					reg = /[^a-z0-9]+/g;
-					url = url.trim().replace(reg,'-');
-					reg = /(\/topic\/\d*\/)(.*)/;
-					if (title.attr('href') != undefined) {
-						title.attr( 'href', title.attr('href').replace(reg,'$1'+url) );
-					} else {
-						title.parent('a').attr( 'href', title.parent('a').attr('href').replace(reg,'$1'+url) );
-					}
-				} 		
-			} else {
-				if (title.html().match(reg)) {
-					var url = title.html().replace(reg,'$9').toLowerCase();
-					title.html( title.html().replace(reg,'$9') );
-					reg = /[^a-z0-9]+/g;
-					url = url.trim().replace(reg,'-');
-					reg = /(\/topic\/\d*\/)(.*)/;
-					if (title.attr('href') != undefined) {
-						title.attr( 'href', title.attr('href').replace(reg,'$1'+url) );
-					} else {
-						title.parent('a').attr( 'href', title.parent('a').attr('href').replace(reg,'$1'+url) );
-					}
-				}
-			}
-		});
-		//Change topic title on topic
-		$('h3 p.topic-title').each(function() {
-			var title = $(this);
-			var reg = /%\((#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})|(rgb\((\d{1,3}),(\d{1,3}),(\d{1,3})\))|([a-z]){3,})\)(\[([^%\(]*)\])/g;
-			if (allowed == 'allow') {
-				if (title.html().match(reg)) {
-					title.html( title.html().replace(reg,'<font style="color:$1">$9</font>') );
-				}
-			} else {
-				if (title.html().match(reg)) {
-					title.html( title.html().replace(reg,'$9') );
-				}
-			}
-		});
-		//Change Breadcrump & header information
-		$('ol.breadcrumb li.active span, .header-topic-title span').each(function() {
-			var title = $(this);
-			var reg = /%\((#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})|(rgb\((\d{1,3}),(\d{1,3}),(\d{1,3})\))|([a-z]){3,})\)(\[([^%\(]*)\])/g;
-			if (title.html().match(reg)) {
-				title.html( title.html().replace(reg,'$9') );
-			}
-		});
-		//Change document title
-		var reg = /%\((#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})|(rgb\((\d{1,3}),(\d{1,3}),(\d{1,3})\))|([a-z]){3,})\)(\[([^%\(]*)\])/g;
-		document.title = document.title.replace(reg, '$9');
-	}
-
+                filterTopic(topic);
+            });
+        }, 200);
+    }
 }());

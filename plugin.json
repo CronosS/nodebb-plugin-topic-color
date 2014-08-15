@@ -4,18 +4,15 @@
 	"description": "Allow users to add colors to their topics",
 	"url": "https://github.com/esiao/nodebb-plugin-topic-color",
 	"library": "./library.js",
-    	"templates": "./public/templates",
+    "templates": "./public/templates",
 	"hooks": [
-        		{ "hook": "action:app.load", "method": "init" },
+        { "hook": "static:app.load", "method": "init" },
 		{ "hook": "filter:admin.header.build", "method": "admin.menu" }
 	],
-	"staticDirs": {
-		"public": "./public"
-	},
-	"scripts": [
-		"public/js/main.js"
-	],
+    "scripts": [
+        "./public/js/main.js"
+    ],
 	"less": [
-		"public/less/style.less"
+		"./public/less/style.less"
 	]
 }
