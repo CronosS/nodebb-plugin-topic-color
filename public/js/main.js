@@ -1,7 +1,6 @@
 (function () {
     'use strict';
-	/*global socket, RELATIVE_PATH, ajaxify, utils*/
-    //TODO: known issue: /home preview post of a non-valid-user on a valid-topic
+    /*global socket, RELATIVE_PATH, ajaxify, utils*/
 
     var allowedGroups = getAllowedGroups(),
         allGroups = getAllGroups(),
@@ -9,8 +8,7 @@
 
     //--- Event handlers ---
     $(document).ready(watchNotifications);
-    $(window).on('action:ajaxify.end', fetchTopics);
-    $(window).on('action:widgets.loaded', fetchWidgets);
+    $(window).on({'action:ajaxify.end': fetchTopics, 'action:widgets.loaded': fetchWidgets});
     socket.on('event:post_edited', watchEditedTopics);
 
     function watchNotifications() {
@@ -22,14 +20,9 @@
     }
 
     function fetchTopics() {
-        //Change Breadcrumb
-        parseColor(document.querySelector('ol.breadcrumb li.active span'), false);
-        //Change document title
-        parseColor(document.querySelector('title'), false);
-
-        //Change header information
-        //TODO: fix this.
-        // parseColor(document.querySelector('.header-topic-title.hidden-xs span'), false);
+        //Change Breadcrumb, document title.
+        parseColor($('.breadcrumb .active span, title'), false);
+        //Remove title on scrolled header.
         document.querySelector('.header-topic-title.hidden-xs').innerHTML = '';
 
         $.getJSON(RELATIVE_PATH + '/api/' + ajaxify.currentPage, traverse);
@@ -47,15 +40,15 @@
     }
 
     function getAllGroups() {
-        $.getJSON(RELATIVE_PATH + '/api/groups/', function (groupsData) {
-            allGroups = groupsData.groups;
+        $.getJSON(RELATIVE_PATH + '/api/groups/', function (data) {
+            allGroups = data.groups;
         });
     }
 
     function traverse(o) {
         var i;
 
-        if (o && o.hasOwnProperty('tid')) {
+        if (o && o.hasOwnProperty('title')) {
             return filterTopic(o);
         }
 
@@ -68,38 +61,36 @@
 
     //--- Main colorify ---
     function filterTopic(topic) {
+        var canColor;
+
         allGroups.some(function (group) {
             var isInGroup = group.members.some(function (member) {
                     //The username comparison (when no userid <directly> accessible) can gives
                     //unexpected result if 2 members have the same username (not possible yet).
                     return topic.uid === member.uid || topic.uname === member.username;
-                }),
-                canColor = isInGroup && allowedGroups.indexOf(group.name) !== -1;
+                });
 
-            return colorifyTopic(topic, canColor) && canColor;
+            canColor = isInGroup && allowedGroups.indexOf(group.name) !== -1;
+
+            return canColor;
         });
-    }
 
-    function colorifyTopic(topic, canColor) {
-        //change topic title on home
-        parseColor(document.querySelector('.post-preview a[href^="/topic/' + topic.tid + '/"]'), canColor);
-        //change topic title on widget last topic
-        parseColor(document.querySelector('#recent_topics li a[href^="/topic/' + topic.tid + '/"]'), canColor);
-        //Change topic title on topic list
-        parseColor(document.querySelector('.category-item[data-tid="' + topic.tid + '"] .topic-title'), canColor);
-        //Change topic title on topic
-        parseColor(document.querySelector('#topic_title_' + topic.mainPid), canColor);
+        //Change topic title on home, last topic widget, topic list, topic page.
+        parseColor($('.post-preview a[href^="/topic/' + topic.tid + '/"], #recent_topics a[href^="/topic/' + topic.tid +
+                    '/"], .category-item[data-tid="' + topic.tid + '"] .topic-title, #topic_title_' + topic.mainPid), canColor);
     }
 
     function parseColor(title, canColor) {
         if (title !== null) {
-            if (title.textContent.match(regColor)) {
-                title.innerHTML = title.innerHTML.replace(regColor, canColor ? '<font style="color:$1">$2</font>' : '$2');
+            title.each(function () {
+                if (this.textContent.match(regColor)) {
+                    this.innerHTML = this.innerHTML.replace(regColor, canColor ? '<font style="color:$1">$2</font>' : '$2');
 
-                if (title.href !== undefined) {
-                    title.href = title.href.replace(/(\/topic\/\d*\/).*/, '$1' + utils.slugify(title.textContent.replace(regColor, '$2')));
+                    if (this.href !== undefined) {
+                        this.href = this.href.replace(/(\/topic\/\d+\/).*/, '$1' + utils.slugify(this.textContent.replace(regColor, '$2')));
+                    }
                 }
-            }
+            });
         }
     }
 
@@ -109,7 +100,7 @@
             if (!document.querySelector('#notif-list .fa-spin')) {
                 clearInterval(intervalId);
                 $('#notif-list .text').each(function () {
-                    parseColor(this, false);
+                    parseColor($(this), false);
                 });
             }
         }, 20);
